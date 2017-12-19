@@ -3,13 +3,9 @@
 
 import os
 import sys
-from collections import namedtuple
+import re
 import datetime
 import argparse
-
-
-LogLine = namedtuple("LogLine", "ip time")
-
 
 class NginxLogDao():
     """Data access object for NginxLog"""
@@ -21,37 +17,27 @@ class NginxLogDao():
         assert os.path.exists(filename)
 
         self.filename = filename
+        self.logline = {}
 
-    def log_lines(self):
+    def log_lines(self, time_size=10):
         """Reads logs lines and returns them as named tuples"""
+
+        PATTERN = re.compile(r"""(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - - \[(\d{2}\/[a-z]{3}\/\d{4}:\d{2}:\d{2}:\d{2})""", re.IGNORECASE)
 
         with open(self.filename) as f:
             for line in f:
-                ip = line.split("-")[0].strip()
-                date_str = line.split("[")[1].split("]")[0].split(" ")[0]
+                res = re.search(PATTERN, line)
+                ip, date = res.group(1), res.group(2)
                 date = datetime.datetime.strptime(
-                    date_str, '%d/%b/%Y:%H:%M:%S')
-                yield LogLine(ip=ip, time=date)
-
-    def time_grouped(self, time_size=10):
-        """Returns log lines grouped in time groups with blocks 
-           of time_size seconds"""
-
-        block = None
-        block_begin = None
-        for log_line in self.log_lines():
-            if block_begin is None or log_line.time > block_begin \
-                    + datetime.timedelta(seconds=time_size):
-                if block_begin is not None:
-                    yield block
-
-                block_begin = log_line.time
-                block = list()
-
-            block.append(log_line)
+                date, '%d/%b/%Y:%H:%M:%S')
+                if ip not in logline:
+                    logline[ip] = [date]
+                elif ip in logline and date > logline[ip][-1] + datetime.timedelta(seconds=time_size):
+                    logline[ip].append(date)
+            return logline
 
     def ips_between(self, dt1, dt2):
-        """Returns set of ip addresses between two timestamps"""
+        """To modify with new log_lines method"""
 
         ips = set()
         for log_line in self.log_lines():
